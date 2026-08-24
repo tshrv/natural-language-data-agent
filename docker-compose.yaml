@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  data-loader:
+    image: duckdb/duckdb:latest
+    container_name: data-loader
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./data-loader/data:/data:ro
+      - ./data-loader/src:/src:ro
+    command:
+      - duckdb
+      - -echo
+      - -init
+      - /src/load.sql
+
+volumes:
+  postgres_data:
