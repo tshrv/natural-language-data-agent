@@ -1,2 +1,3 @@
-# Natural Language Data Agent
-An agentic system that translates natural-language questions into database queries, dynamically retrieves schema and metadata, plans and executes one or more queries, validates results, and generates grounded natural-language answers.
+# SQL Agent
+
+This is a command-line SQL agent that translates natural language questions into live PostgreSQL queries. You type a question, and the agent figures out which tables to inspect, writes the SQL, runs it, and hands back a plain-English answer.
