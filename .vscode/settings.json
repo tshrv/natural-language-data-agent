@@ -1,0 +1,9 @@
+{
+    "python.terminal.useEnvFile": true,
+    "[python]": {
+    "editor.codeActionsOnSave": {
+      "source.organizeImports.ruff": "explicit"
+    },
+    "editor.formatOnSave": false
+  }
+}
