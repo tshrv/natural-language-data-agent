@@ -1,8 +1,9 @@
 from loguru import logger
 
-from models import GetTableSchemaParams, RunQueryParams
 from utils.db import get_db_connection
 from utils.json import dumps as json_dumps
+
+from .models import GetTableSchemaParams, RunQueryParams
 
 
 async def list_tables() -> str:
