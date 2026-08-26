@@ -1,8 +1,7 @@
-import json
-
 from loguru import logger
 
 from utils.db import get_db_connection
+from utils.json import dumps as json_dumps
 
 
 async def list_tables() -> str:
@@ -23,7 +22,7 @@ async def list_tables() -> str:
         except Exception as e:
             logger.error(f"Error fetching tables: {e}")
             response = {"error": str(e)}
-    return json.dumps(response)
+    return json_dumps(response)
 
 
 async def get_table_schema(table_name: str) -> str:
@@ -74,4 +73,31 @@ async def get_table_schema(table_name: str) -> str:
         except Exception as e:
             logger.error(f"Error fetching table schema: {e}")
             response = {"error": str(e)}
-        return json.dumps(response)
+        return json_dumps(response)
+
+
+async def run_query(sql: str):
+    """
+    Execute a read-only SQL query and return results. Limited to 50 rows.
+    """
+    try:
+        async with get_db_connection() as conn:
+            LIMIT = 50
+            safe_sql = f"SELECT * FROM ({sql}) AS user_stmt LIMIT $1"
+            # TODO: use sqlglot to parse and ensure query is SELECT only
+            records = await conn.fetch(safe_sql, LIMIT)
+            if not len(records):
+                raise ValueError("Query returned no records")
+            columns: list[str] = list(records[0].keys())
+            rows : list[list[str]] = [list(record.values()) for record in records]
+            result = {
+                "columns": columns,
+                "rows": rows,
+                "row_count": len(rows),
+                "note": f"Results are capped at {LIMIT} rows" if len(rows) == LIMIT else None,
+            }
+            logger.info(result)
+    except Exception as e:
+        result = {"error": str(e)}
+        logger.info(result)
+    return json_dumps(result)
