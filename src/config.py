@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     postgres_host: str = "localhost"
     postgres_port: int = 5432
     postgres_db: str
-    postgres_user: str
-    postgres_password: str
+    postgres_user_ro: str
+    postgres_password_ro: str
 
     # llm
     groq_api_key: str
@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     @property
     def db_url(self) -> str:
         """Raw driver connection string."""
-        return f"postgresql://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        return f"postgresql://{self.postgres_user_ro}:{self.postgres_password_ro}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
     model_config = SettingsConfigDict(
         env_file=".env",
