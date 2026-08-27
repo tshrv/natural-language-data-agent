@@ -4,10 +4,11 @@ from config import settings
 from utils.logging import logger
 
 
-def get_llm_client():
+def get_llm_client() -> groq.AsyncGroq:
     """Create an async groq client"""
     client = groq.AsyncGroq(api_key=settings.groq_api_key)
     return client
+
 
 async def test_llm_connection():
     logger.info("Testing connection to groq...")
@@ -16,14 +17,8 @@ async def test_llm_connection():
         response = await client.chat.completions.create(
             model=settings.model_name,
             messages=[
-            {
-                "role": "system",
-                "content": "Greet the user."
-            },
-            {
-                "role": "user",
-                "content": "Hi, I am Tushar"
-            }
+                {"role": "system", "content": "Greet the user."},
+                {"role": "user", "content": "Hi, I am Tushar"},
             ],
             temperature=1,
             max_completion_tokens=2048,

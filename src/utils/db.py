@@ -1,23 +1,48 @@
-from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import asyncpg
+from pydantic import BaseModel, ConfigDict
 
 from config import settings
 from utils.logging import logger
 
 
-@asynccontextmanager
-async def get_db_connection() -> AsyncGenerator[asyncpg.Connection, None]:
-    """Context manager to acquire and automatically release a connection."""
-    connection: asyncpg.Connection = await asyncpg.connect(settings.db_url)    
-    logger.debug(f"Connected to database: {settings.postgres_db} at {settings.postgres_host}:{settings.postgres_port}")
-    yield connection
-    await connection.close()
-    logger.debug(f"Connection to database {settings.postgres_db} closed.")
+class DatabaseConnection(BaseModel):
+    id: str
+    connection: asyncpg.Connection
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-async def test_db():
-    async with get_db_connection() as conn:
-        values = await conn.fetch('SELECT count(*) FROM customer')
-        logger.debug(f'Customer count: {values[0]["count"]}')
+class Database:
+    POOL: asyncpg.Pool = None
+
+    @classmethod
+    async def connect(cls):
+        """Create connections pool"""
+        cls.POOL = await asyncpg.create_pool(settings.db_url, min_size=1, max_size=5)
+        logger.debug("Database connections established successfully")
+
+    @classmethod
+    async def disconnect(cls):
+        """Close all connections and clear pool"""
+        if cls.POOL:
+            await cls.POOL.close()
+            logger.debug("Database connections closed successfully")
+
+    @classmethod
+    @asynccontextmanager
+    async def get_connection(cls):
+        """Aquire connection from pool"""
+        if cls.POOL is None:
+            raise RuntimeError(
+                "Database pool not initialized, call `Database.connect()` first"
+            )
+        async with cls.POOL.acquire() as connection:
+            logger.debug("Database connection aquired")
+            yield connection
+
+
+async def test_db_connection():
+    async with Database.get_connection() as conn:
+        values = await conn.fetch("SELECT count(*) FROM customer")
+        logger.debug(f"Customer count: {values[0]['count']}")

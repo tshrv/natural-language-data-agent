@@ -16,10 +16,15 @@ def extended_serializer(obj):
         return obj.decode("utf-8", errors="replace")
     elif hasattr(obj, "__dict__"):
         return obj.__dict__
-    
+
     raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
 
 def dumps(obj, **kwargs) -> str:
     """Custom json.dumps wrapper with extended type support."""
     kwargs.setdefault("default", extended_serializer)
     return json.dumps(obj, **kwargs)
+
+
+def loads(*args, **kwargs) -> dict:
+    return json.loads(*args, **kwargs)

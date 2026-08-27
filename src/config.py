@@ -12,12 +12,16 @@ class Settings(BaseSettings):
     postgres_db: str
     postgres_user_ro: str
     postgres_password_ro: str
-
+    max_db_connections: int
+    
     # llm
     groq_api_key: str
     model_name: str = "qwen/qwen3.6-27b"
     # qwen/qwen3.6-27b
     # groq/compound
+
+    # agent
+    max_agent_iterations: int = 10
 
     @computed_field
     @property
