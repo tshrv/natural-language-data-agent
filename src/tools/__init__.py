@@ -1,31 +1,37 @@
-from .db import get_table_schema, list_tables, run_query
-from .models import GetTableSchemaParams, RunQueryParams
-from .schema import (
-    get_table_schema_tool_schema,
-    list_tables_tool_schema,
-    run_query_tool_schema,
-)
+from collections.abc import Callable
 
-TOOLS = {
-    "get_table_schema": get_table_schema,
-    "list_tables": list_tables,
-    "run_query": run_query,
+from pydantic import BaseModel
+
+from .db import get_table_schema, list_tables, run_query, validate_query
+from .models import GetTableSchemaParams, RunQueryParams, ValidateQueryParams
+from .schema import get_tool_schema
+
+_AVAILABLE_TOOLS = {
+    "list_tables": {"function": list_tables, "params_cls": None},
+    "get_table_schema": {
+        "function": get_table_schema,
+        "params_cls": GetTableSchemaParams,
+    },
+    "run_query": {"function": run_query, "params_cls": RunQueryParams},
+    "validate_query": {"function": validate_query, "params_cls": ValidateQueryParams},
 }
 
-TOOL_SCHEMAS = [
-    get_table_schema_tool_schema,
-    list_tables_tool_schema,
-    run_query_tool_schema,
-]
 
-TOOL_PARAMS_CLS = {
-    "get_table_schema": GetTableSchemaParams,
-    "run_query": RunQueryParams,
-    "list_tables": None,
-}
+def get_tools_schemas() -> list[dict]:
+    """Get schemas of all available tools"""
+    return [
+        get_tool_schema(v.get("function"), v.get("params_cls"))
+        for k, v in _AVAILABLE_TOOLS.items()
+    ]
 
-assert set(TOOLS.keys()) == set(TOOL_PARAMS_CLS.keys()), (
-    "TOOLS and TOOL_PARAMS_CLS are out of sync"
-)
 
-__all__ = ["TOOLS", "TOOL_PARAMS_CLS", "TOOL_SCHEMAS"]
+def get_tool(key: str) -> tuple[Callable, BaseModel]:
+    """Get the tool function by the key"""
+    tool_obj = _AVAILABLE_TOOLS.get(key, None)
+    if tool_obj is None:
+        return (None, None)
+    else:
+        return (tool_obj.get("function"), tool_obj.get("params_cls"))
+
+
+__all__ = ["get_tool", "get_tools_schemas"]

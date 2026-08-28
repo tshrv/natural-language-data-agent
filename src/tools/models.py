@@ -6,4 +6,10 @@ class GetTableSchemaParams(BaseModel):
 
 
 class RunQueryParams(BaseModel):
-    sql: str = Field(description="Query to execute, SELECT only, do not add ';' at end")
+    sql: str = Field(description="Query to execute, do not add ';' at end")
+
+
+class ValidateQueryParams(BaseModel):
+    sql: str = Field(
+        description="Check the sql query for forbidden statements before execution"
+    )

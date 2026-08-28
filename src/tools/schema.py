@@ -3,9 +3,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .db import get_table_schema, list_tables, run_query
-from .models import GetTableSchemaParams, RunQueryParams
-
 
 def get_tool_schema(
     func: Callable[..., Any], params_model: type[BaseModel] | None = None
@@ -24,8 +21,3 @@ def get_tool_schema(
         params_model_schema.pop("title")
         schema["function"]["parameters"] = params_model_schema
     return schema
-
-
-get_table_schema_tool_schema = get_tool_schema(get_table_schema, GetTableSchemaParams)
-list_tables_tool_schema = get_tool_schema(list_tables)
-run_query_tool_schema = get_tool_schema(run_query, RunQueryParams)

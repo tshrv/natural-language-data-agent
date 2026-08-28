@@ -1,7 +1,7 @@
 from groq.types.chat.chat_completion import ChatCompletion
 
 from config import settings
-from tools import TOOL_PARAMS_CLS, TOOL_SCHEMAS, TOOLS
+from tools import get_tool, get_tools_schemas
 from utils.json import dumps as json_dumps
 from utils.json import loads as json_loads
 from utils.llm import get_llm_client
@@ -14,7 +14,8 @@ Follow this process for every question:
 1. Call list_tables to see available tables.
 2. Call get_table_schema for each table relevant to the question. Pay close attention to foreign key relationships to determine correct JOIN conditions.
 3. Write a SQL query using only the columns and relationships you discovered. Never guess column names.
-4. Call run_query to execute it.
+4. Call validate_query to check your SQL before executing it.
+5. If validation passes, call run_query to execute it.
 
 Rules:
 - Only generate SELECT queries. Never use INSERT, UPDATE, DELETE, DROP, or any DDL/DML.
@@ -41,7 +42,7 @@ async def run_agent(user_question: str) -> str:
         response: ChatCompletion = await llm_client.chat.completions.create(
             model=settings.model_name,
             messages=messages,
-            tools=TOOL_SCHEMAS,
+            tools=get_tools_schemas(),
             tool_choice="auto",
         )
         message = response.choices[0].message
@@ -53,18 +54,16 @@ async def run_agent(user_question: str) -> str:
                 tool_args = json_loads(tool_call.function.arguments)
                 logger.info(f"Tool : {tool_name}({tool_args if tool_args else ''})")
 
-                if tool_name not in TOOLS:
+                func, params_cls = get_tool(tool_name)
+                if not func:
                     result = {"error": f"Unknown tool : {tool_name}"}
                 else:
-                    tool_func = TOOLS[tool_name]
                     if tool_args:
                         # tool with parameters
-                        result = await tool_func(
-                            TOOL_PARAMS_CLS[tool_name](**tool_args)
-                        )
+                        result = await func(params_cls(**tool_args))
                     else:
                         # tool without parameters
-                        result = await tool_func()
+                        result = await func()
 
                 logger.info(f"Intermediate result: {result[:200]}")
                 messages.append(

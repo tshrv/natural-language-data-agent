@@ -3,7 +3,7 @@ from loguru import logger
 from utils.db import Database
 from utils.json import dumps as json_dumps
 
-from .models import GetTableSchemaParams, RunQueryParams
+from .models import GetTableSchemaParams, RunQueryParams, ValidateQueryParams
 
 
 async def list_tables() -> str:
@@ -79,7 +79,7 @@ async def get_table_schema(params: GetTableSchemaParams) -> str:
 
 
 async def run_query(params: RunQueryParams) -> str:
-    """Execute a read-only SQL query and return results. Result is truncated to 50 rows."""
+    """Execute a SQL query and return results. Result is truncated to 50 rows."""
     try:
         async with Database.get_connection() as conn:
             LIMIT = 50
@@ -103,3 +103,19 @@ async def run_query(params: RunQueryParams) -> str:
         result = {"error": str(e)}
         logger.info(result)
     return json_dumps(result)
+
+
+async def validate_query(params: ValidateQueryParams) -> str:
+    """Validate the sql query for forbidden statements before execution"""
+    forbidden = ["insert", "update", "alter", "delete", "drop", "create", "truncate"]
+    sql_lower = params.sql.lower()
+    # valid by default unless forbidden keywords are found
+    response = {"valid": True, "sql": params.sql}
+    for keyword in forbidden:
+        if sql_lower.startswith(keyword):
+            response.update(
+                valid=False,
+                reason=f"{keyword.upper()} statements are not allowed, only SELECT queries are permitted",
+            )
+            logger.warning(response)
+    return json_dumps(response)
