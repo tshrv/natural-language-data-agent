@@ -3,7 +3,12 @@ from loguru import logger
 from utils.db import Database
 from utils.json import dumps as json_dumps
 
-from .models import GetTableSchemaParams, RunQueryParams, ValidateQueryParams
+from .models import (
+    ExplainAnalyzeQueryParams,
+    GetTableSchemaParams,
+    RunQueryParams,
+    ValidateQueryParams,
+)
 
 
 async def list_tables() -> str:
@@ -119,3 +124,25 @@ async def validate_query(params: ValidateQueryParams) -> str:
             )
             logger.warning(response)
     return json_dumps(response)
+
+
+async def explain_analyze_query(params: ExplainAnalyzeQueryParams) -> str:
+    """Run EXPLAIN ANALYZE on a sql query and return the execution plan"""
+    try:
+        async with Database.get_connection() as conn:
+            explain_sql = f"EXPLAIN ANALYZE {params.sql}"
+            records = await conn.fetch(explain_sql)
+            if not len(records):
+                raise ValueError("Query returned no records")
+            columns: list[str] = list(records[0].keys())
+            rows: list[list[str]] = [list(record.values()) for record in records]
+            result = {
+                "columns": columns,
+                "rows": rows,
+                "row_count": len(rows),
+            }
+            logger.info(result)
+    except Exception as e:
+        result = {"error": str(e)}
+        logger.info(result)
+    return json_dumps(result)

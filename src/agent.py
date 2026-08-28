@@ -23,7 +23,11 @@ Rules:
 - Always LIMIT results to avoid returning too many rows. Use LIMIT 20 unless the user asks for more.
 - Never SELECT * from large tables. Always select only the columns needed.
 - When joining tables, always use the foreign key relationships from the schema.
-- Format your final answer as a clear, human-readable response based on the query results."""
+- Format your final answer as a clear, human-readable response based on the query results.
+
+Query explanation:
+- If the user asks you to explain a query, run explain_analyze_query with the SQL you last executed.
+- Summarize the EXPLAIN ANALYZE output in plain English, highlighting: sequential scans vs index scans, join strategies (hash join, merge join, nested loop), and estimated vs actual row counts."""
 
 
 async def run_agent(user_question: str) -> str:

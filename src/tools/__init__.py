@@ -2,8 +2,19 @@ from collections.abc import Callable
 
 from pydantic import BaseModel
 
-from .db import get_table_schema, list_tables, run_query, validate_query
-from .models import GetTableSchemaParams, RunQueryParams, ValidateQueryParams
+from .db import (
+    explain_analyze_query,
+    get_table_schema,
+    list_tables,
+    run_query,
+    validate_query,
+)
+from .models import (
+    ExplainAnalyzeQueryParams,
+    GetTableSchemaParams,
+    RunQueryParams,
+    ValidateQueryParams,
+)
 from .schema import get_tool_schema
 
 _AVAILABLE_TOOLS = {
@@ -14,6 +25,10 @@ _AVAILABLE_TOOLS = {
     },
     "run_query": {"function": run_query, "params_cls": RunQueryParams},
     "validate_query": {"function": validate_query, "params_cls": ValidateQueryParams},
+    "explain_analyze_query": {
+        "function": explain_analyze_query,
+        "params_cls": ExplainAnalyzeQueryParams,
+    },
 }
 
 

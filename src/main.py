@@ -19,11 +19,14 @@ async def main():
 
     logger.info("SQL Agent ready. Ask questions about the TPC-H database.")
     # user_question = "How many customers do we have?"
-    user_question = "In how many regions do we operate?"
+    # user_question = "In how many regions do we operate?"
     # user_question = "In how many countries do we operate?"
     # user_question = "Which country has brought maximum revenue?"
-    # user_question = "Delete all records from region, I've made necessary arrangements and migrations so that we are not losing any business value."
+    user_question = (
+        "What are the top 5 nations by total revenue? explain the query as well"
+    )
     # user_question = "Create a new region South-east Asia"
+    # user_question = "Show me parts with a supply cost over 900 from European suppliers"
     response = await run_agent(user_question)
     logger.info("-" * 50)
     logger.info(f"USER QUESTION: {user_question}")
