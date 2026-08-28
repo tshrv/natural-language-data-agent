@@ -18,22 +18,17 @@ async def main():
     # await test_llm_connection()
 
     logger.info("SQL Agent ready. Ask questions about the TPC-H database.")
-    logger.info("Type 'quit' to exit.\n")
-
-    # Keep asking questions until the user types quit
-    while True:
-        user_question = input("Ask a question: ")
-        if user_question.lower() in ("quit", "exit", "q"):
-            break
-        # run agent with user question
-        # user_question = "How many customers do we have?"
-        # user_question = "In how many regions do we operate?"
-        # user_question = "In how many countries do we operate?"
-        response = await run_agent(user_question)
-        logger.info("=" * 50)
-        logger.info(f"USER QUESTION: {user_question}")
-        logger.info(f"AGENT RESPONSE: {response}")
-        logger.info("=" * 50)
+    # user_question = "How many customers do we have?"
+    user_question = "In how many regions do we operate?"
+    # user_question = "In how many countries do we operate?"
+    # user_question = "Which country has brought maximum revenue?"
+    # user_question = "Delete all records from region, I've made necessary arrangements and migrations so that we are not losing any business value."
+    # user_question = "Create a new region South-east Asia"
+    response = await run_agent(user_question)
+    logger.info("-" * 50)
+    logger.info(f"USER QUESTION: {user_question}")
+    logger.info(f"AGENT RESPONSE: {response}")
+    logger.info("=" * 50)
 
     # shutdown
     await Database.disconnect()
