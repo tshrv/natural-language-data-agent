@@ -1,8 +1,11 @@
+from aiocache import cached
 from loguru import logger
 
+from config import settings
 from utils.db import Database
 from utils.json import dumps as json_dumps
 
+from .cache import tool_key_builder
 from .models import (
     ExplainAnalyzeQueryParams,
     GetTableSchemaParams,
@@ -11,6 +14,7 @@ from .models import (
 )
 
 
+@cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
 async def list_tables() -> str:
     """List names of all tables in the public schema."""
     async with Database.get_connection() as conn:
@@ -30,6 +34,7 @@ async def list_tables() -> str:
     return json_dumps(response)
 
 
+@cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
 async def get_table_schema(params: GetTableSchemaParams) -> str:
     """Get column names, data types, and foreign key relationships for a table."""
     async with Database.get_connection() as conn:
@@ -83,6 +88,7 @@ async def get_table_schema(params: GetTableSchemaParams) -> str:
         return json_dumps(response)
 
 
+@cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
 async def run_query(params: RunQueryParams) -> str:
     """Execute a SQL query and return results. Result is truncated to 50 rows."""
     try:
@@ -110,6 +116,7 @@ async def run_query(params: RunQueryParams) -> str:
     return json_dumps(result)
 
 
+@cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
 async def validate_query(params: ValidateQueryParams) -> str:
     """Validate the sql query for forbidden statements before execution"""
     forbidden = ["insert", "update", "alter", "delete", "drop", "create", "truncate"]
@@ -126,6 +133,7 @@ async def validate_query(params: ValidateQueryParams) -> str:
     return json_dumps(response)
 
 
+@cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
 async def explain_analyze_query(params: ExplainAnalyzeQueryParams) -> str:
     """Run EXPLAIN ANALYZE on a sql query and return the execution plan"""
     try:
