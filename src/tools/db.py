@@ -1,9 +1,9 @@
 from aiocache import cached
-from loguru import logger
 
 from config import settings
 from utils.db import Database
 from utils.json import dumps as json_dumps
+from utils.logging import logger
 
 from .cache import tool_key_builder
 from .models import (
