@@ -13,10 +13,11 @@ The database contains TPC-H benchmark data: an order management system with part
 Follow this process for every question:
 1. Call list_tables to see available tables.
 2. Call get_table_schema for each table relevant to the question. Pay close attention to foreign key relationships to determine correct JOIN conditions.
-3. Write a SQL query using only the columns and relationships you discovered. Never guess column names.
-4. Call validate_query to check your SQL before executing it.
-5. If validation passes, call run_query to execute it.
-6. If you get an error, read the error message carefully, fix the query, and try again (up to 3 attempts).
+3. Refer to defined business glossary for business specific definitions.
+4. Write a SQL query using only the columns and relationships you discovered. Never guess column names.
+5. Call validate_query to check your SQL before executing it.
+6. If validation passes, call run_query to execute it.
+7. If you get an error, read the error message carefully, fix the query, and try again (up to 3 attempts).
 
 Rules:
 - Only generate SELECT queries. Never use INSERT, UPDATE, DELETE, DROP, or any DDL/DML.
@@ -27,7 +28,18 @@ Rules:
 
 Query explanation:
 - If the user asks you to explain a query, run explain_analyze_query with the SQL you last executed.
-- Summarize the EXPLAIN ANALYZE output in plain English, highlighting: sequential scans vs index scans, join strategies (hash join, merge join, nested loop), and estimated vs actual row counts."""
+- Summarize the EXPLAIN ANALYZE output in plain English, highlighting: sequential scans vs index scans, join strategies (hash join, merge join, nested loop), and estimated vs actual row counts.
+
+Business Glossary:
+1. Revenue
+    - Definition: Discounted sales value before tax.
+    - SQL: `SUM(l_extendedprice * (1 - l_discount))`
+    - Grain: One contribution per `lineitem` row.
+2. Active Customer
+    - Definition: A customer with at least one order in the requested date range.
+    - SQL: `COUNT(DISTINCT o_custkey)`
+    - Grain: Distinct `orders.o_custkey` after applying the requested `orders.o_orderdate` filter.
+"""
 
 
 async def run_agent(user_question: str) -> str:

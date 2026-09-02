@@ -241,6 +241,44 @@ The query runs **in parallel with 2 worker processes** ("Workers Planned: 2 / La
 **Key takeaway:** This is a textbook "scan the big fact table (lineitem) and hash-join two small dimension tables, then aggregate" plan. The wall-clock cost (~14.7 s) is driven almost entirely by the sequential read of the 20M-row `lineitem` table; the joins, aggregation, and top-N sort are comparatively cheap because the dimension tables are tiny and the final result set is small.
 2026-08-28 20:00:26 | INFO     | __main__:main:33 - ==================================================
 ```
+3. Notice glossary definition usage
+```sh
+08:22:39.909 SQL Agent ready. Ask questions about the TPC-H database.
+08:22:39.910 User question: How many total customers vs active customers do we have?
+08:22:39.910 --------------------------------------------------
+08:22:39.911 Iteration 0/10
+08:22:40.769 Tool : list_tables()
+08:22:40.821 Intermediate result: {"tables": ["customer", "lineitem", "nation", "orders", "part", "partsupp", "region", "supplier"]}
+08:22:40.822 Iteration 1/10
+08:22:41.522 Tool : get_table_schema({'table_name': 'customer'})
+08:22:41.566 Intermediate result: {"table": "customer", "columns": [{"name": "c_custkey", "type": "bigint", "nullable": "NO"}, {"name": "c_name", "type": "character varying", "nullable": "YES"}, {"name": "c_address", "type": "characte
+08:22:41.566 Tool : get_table_schema({'table_name': 'orders'})
+08:22:41.574 Intermediate result: {"table": "orders", "columns": [{"name": "o_orderkey", "type": "bigint", "nullable": "NO"}, {"name": "o_custkey", "type": "bigint", "nullable": "NO"}, {"name": "o_orderstatus", "type": "character", "n
+08:22:41.575 Iteration 2/10
+08:22:42.433 Tool : validate_query({'sql': 'SELECT (SELECT COUNT(*) FROM customer) AS total_customers,\n       (SELECT COUNT(DISTINCT o_custkey) FROM orders) AS active_customers'})
+08:22:42.435 Intermediate result: {"valid": true, "sql": "SELECT (SELECT COUNT(*) FROM customer) AS total_customers,\n       (SELECT COUNT(DISTINCT o_custkey) FROM orders) AS active_customers"}
+08:22:42.436 Iteration 3/10
+08:22:43.249 Tool : run_query({'sql': 'SELECT (SELECT COUNT(*) FROM customer) AS total_customers,\n       (SELECT COUNT(DISTINCT o_custkey) FROM orders) AS active_customers'})
+08:22:53.676 {'columns': ['total_customers', 'active_customers'], 'rows': [[1500000, 999982]], 'row_count': 1, 'note': None}
+08:22:53.678 Intermediate result: {"columns": ["total_customers", "active_customers"], "rows": [[1500000, 999982]], "row_count": 1, "note": null}
+08:22:53.679 Iteration 4/10
+08:22:54.464 Result: Here's the comparison:
+
+- **Total customers:** 1,500,000
+- **Active customers:** 999,982 (customers with at least one order across all dates)
+
+This means roughly **667,018 customers (44.5%)** have never placed an order, while about **66.7%** of all customers are active.
+08:22:54.465 Reached conclusion in 5 iterations
+08:22:54.466 --------------------------------------------------
+08:22:54.466 USER QUESTION: How many total customers vs active customers do we have?
+08:22:54.467 AGENT RESPONSE: Here's the comparison:
+
+- **Total customers:** 1,500,000
+- **Active customers:** 999,982 (customers with at least one order across all dates)
+
+This means roughly **667,018 customers (44.5%)** have never placed an order, while about **66.7%** of all customers are active.
+08:22:54.468 ==================================================
+```
 
 ## Example questions
 - How many customers do we have?

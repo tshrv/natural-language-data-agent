@@ -22,9 +22,10 @@ async def main():
     # user_question = "In how many regions do we operate?"
     # user_question = "In how many countries do we operate?"
     # user_question = "Which country has brought maximum revenue?"
-    user_question = (
-        "What are the top 5 nations by total revenue? explain the query as well"
-    )
+    # user_question = (
+    #     "What are the top 5 nations by total revenue? explain the query as well"
+    # )
+    user_question = "How many total customers vs active customers do we have?"
     # user_question = "Create a new region South-east Asia"
     # user_question = "Show me parts with a supply cost over 900 from European suppliers"
     response = await run_agent(user_question)
