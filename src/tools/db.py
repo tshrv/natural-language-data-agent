@@ -1,8 +1,12 @@
+import sqlglot
 from aiocache import cached
+from sqlglot.errors import OptimizeError, ParseError, SchemaError, TokenError
+from sqlglot.optimizer.qualify import qualify
 
 from config import settings
 from utils.db import Database
 from utils.json import dumps as json_dumps
+from utils.json import loads as json_loads
 from utils.logging import logger
 
 from .cache import tool_key_builder
@@ -11,6 +15,7 @@ from .models import (
     GetTableSchemaParams,
     RunQueryParams,
     ValidateQueryParams,
+    ValidateQueryResult,
 )
 
 
@@ -116,21 +121,98 @@ async def run_query(params: RunQueryParams) -> str:
     return json_dumps(result)
 
 
+@cached(ttl=settings.cache_ttl_seconds)
+async def _get_all_tables_schema() -> dict[str, dict[str, str]]:
+    """Build a dictionary of table schemas for all tables in the public schema. The key is the table name, and the value is a dictionary of column names and their data types."""
+    tables_schema: dict[str, dict[str, str]] = {}
+    tables = json_loads(await list_tables())
+    for table_name in tables.get("tables", []):
+        table_schema = json_loads(
+            await get_table_schema(GetTableSchemaParams(table_name=table_name))
+        )
+        if "error" in table_schema:
+            logger.error(
+                f"Error fetching schema for table {table_name}: {table_schema['error']}"
+            )
+            continue
+        columns = {col["name"]: col["type"] for col in table_schema.get("columns", [])}
+        tables_schema[table_name] = columns
+    return tables_schema
+
+
 @cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
 async def validate_query(params: ValidateQueryParams) -> str:
-    """Validate the sql query for forbidden statements before execution"""
-    forbidden = ["insert", "update", "alter", "delete", "drop", "create", "truncate"]
-    sql_lower = params.sql.lower()
-    # valid by default unless forbidden keywords are found
-    response = {"valid": True, "sql": params.sql}
-    for keyword in forbidden:
-        if sql_lower.startswith(keyword):
-            response.update(
-                valid=False,
-                reason=f"{keyword.upper()} statements are not allowed, only SELECT queries are permitted",
-            )
-            logger.warning(response)
-    return json_dumps(response)
+    """Validate the sql query for forbidden statements, columns, tablenames, etc. before execution"""
+    errors: list[str] = []
+    tables_schema = await _get_all_tables_schema()
+    try:
+        # parse statements for postgres dialect
+        statements = [
+            stmt
+            for stmt in sqlglot.parse(params.sql, read="postgres")
+            if stmt is not None
+        ]
+    except (ParseError, TokenError) as e:
+        # invalid sql syntax
+        return ValidateQueryResult(
+            is_valid=False,
+            errors=[f"SQL parsing error: {e!s}"],
+        ).model_dump_json()
+
+    # check for multiple statements
+    if len(statements) != 1:
+        return ValidateQueryResult(
+            is_valid=False,
+            errors=["Only one SQL statement is allowed"],
+        ).model_dump_json()
+
+    # check for non-SELECT statement
+    expression = statements[0]
+    if not isinstance(expression, sqlglot.exp.Select):
+        return ValidateQueryResult(
+            is_valid=False,
+            errors=["Only SELECT statements are allowed"],
+        ).model_dump_json()
+
+    # check for hallucinated or missing table references
+    known_tables = {table_name.lower() for table_name in tables_schema}
+    referenced_tables = {
+        table.name.lower() for table in expression.find_all(sqlglot.exp.Table)
+    }
+    if not referenced_tables:
+        errors.append("No table references found in the query")
+
+    unknown_tables = referenced_tables - known_tables
+    if unknown_tables:
+        errors.append(f"Unknown table(s) referenced: {', '.join(unknown_tables)}")
+    if errors:
+        return ValidateQueryResult(
+            is_valid=False,
+            errors=errors,
+        ).model_dump_json()
+
+    # qualify
+    try:
+        qualified_expression = qualify(
+            expression=expression,
+            dialect="postgres",
+            schema=tables_schema,
+            validate_qualify_columns=True,
+            quote_identifiers=False,
+            identify=False,
+            sql=params.sql,
+        )
+    except (OptimizeError, SchemaError, TokenError, ParseError) as e:
+        return ValidateQueryResult(
+            is_valid=False,
+            errors=[f"SQL validation error: {e!s}"],
+        ).model_dump_json()
+
+    return ValidateQueryResult(
+        is_valid=True,
+        errors=[],
+        normalized_query=qualified_expression.sql(dialect="postgres"),
+    ).model_dump_json()
 
 
 @cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)

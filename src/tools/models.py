@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -12,6 +14,18 @@ class RunQueryParams(BaseModel):
 class ValidateQueryParams(BaseModel):
     sql: str = Field(
         description="Check the sql query for forbidden statements before execution"
+    )
+
+
+class ValidateQueryResult(BaseModel):
+    is_valid: bool = Field(
+        default=False, description="Whether the query is valid or not"
+    )
+    errors: list[str] | None = Field(
+        default=None, description="List of errors found in the query, empty if valid"
+    )
+    normalized_query: str | None = Field(
+        default=None, description="Normalized version of the query, empty if invalid"
     )
 
 

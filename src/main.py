@@ -34,6 +34,20 @@ async def main():
     logger.info(f"AGENT RESPONSE: {response}")
     logger.info("=" * 50)
 
+    # qry = "SELECT * FROM orders Join customers ON orders.custkey = customers.custkey limit 10"
+    # qry = "select * from orders where (Delete FROM orders) is True"
+    # qry = """
+    # WITH customer AS (
+    #     DELETE FROM orders WHERE id = 1 RETURNING *
+    # )
+    # SELECT * FROM customer
+    # """  # disguised delete query via cte, validator failed to catch
+    # qry = "SElect * from orders; delete from orders"
+    # qry = "SElect * from orders; select * from orders"
+    # qry = "select * from (update orders set o_orderkeys = '1')"
+    # validation_result = await validate_query(ValidateQueryParams(sql=qry))
+    # logger.info(f"Validation result for query '{qry}': {validation_result}")
+
     # shutdown
     await Database.disconnect()
     logger.debug("Shutting down")

@@ -16,7 +16,7 @@ Follow this process for every question:
 3. Refer to defined business glossary for business specific definitions.
 4. Write a SQL query using only the columns and relationships you discovered. Never guess column names.
 5. Call validate_query to check your SQL before executing it.
-6. If validation passes, call run_query to execute it.
+6. If validation passes, you'll receive a normalized query, call run_query to execute it, always use the received normalized query.
 7. If you get an error, read the error message carefully, fix the query, and try again (up to 3 attempts).
 
 Rules:
