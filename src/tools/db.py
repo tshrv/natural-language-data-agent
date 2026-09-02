@@ -143,6 +143,7 @@ async def _get_all_tables_schema() -> dict[str, dict[str, str]]:
 @cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
 async def validate_query(params: ValidateQueryParams) -> str:
     """Validate the sql query for forbidden statements, columns, tablenames, etc. before execution"""
+    # TODO: the llm does not always run the validation before execution. Enforce validation inside the run_query function as well.
     errors: list[str] = []
     tables_schema = await _get_all_tables_schema()
     try:
