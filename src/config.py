@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     max_agent_iterations: int = 10
     cache_ttl_seconds: int = 3600
     plan_rows_warning: int = 100_000
-    plan_cost_warning: int = 1_000_000
+    plan_cost_warning: float = 1_000_000
 
     @computed_field
     @property

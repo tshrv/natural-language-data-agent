@@ -1,3 +1,5 @@
+from typing import Any
+
 import sqlglot
 from aiocache import cached
 from sqlglot.errors import OptimizeError, ParseError, SchemaError, TokenError
@@ -12,7 +14,9 @@ from utils.logging import logger
 from .cache import tool_key_builder
 from .models import (
     ExplainAnalyzeQueryParams,
+    ExplainQueryParams,
     GetTableSchemaParams,
+    QueryPlanReport,
     RunQueryParams,
     ValidateQueryParams,
     ValidateQueryResult,
@@ -235,5 +239,71 @@ async def explain_analyze_query(params: ExplainAnalyzeQueryParams) -> str:
             logger.info(result)
     except Exception as e:
         result = {"error": str(e)}
-        logger.info(result)
+        logger.error(result)
+    return json_dumps(result)
+
+
+def _walk_plan(node: dict[str, Any]) -> list[dict[str, Any]]:
+    """Recursively walk the query plan tree and return a list of nodes"""
+    nodes = [node]
+    for child in node.get("Plans", []):
+        nodes.extend(_walk_plan(child))
+    return nodes
+
+
+@cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)
+async def explain_query(params: ExplainQueryParams) -> str:
+    """Run EXPLAIN on a sql query and return the execution plan, this does and estimation of the cost and rows but does not run the query"""
+    try:
+        async with Database.get_connection() as conn:
+            explain_sql = f"EXPLAIN (FORMAT JSON) {params.sql}"
+            records = await conn.fetch(explain_sql)
+            if not len(records):
+                raise ValueError("Query returned no EXPLAIN result")
+
+            plan = json_loads(records[0]["QUERY PLAN"])[0]
+            root = plan["Plan"]
+
+            row_warning = settings.plan_rows_warning
+            cost_warning = settings.plan_cost_warning
+            root_rows = int(root.get("Plan Rows", 0))
+            total_cost = float(root.get("Total Cost", 0.0))
+            risks: list[str] = []
+
+            if root_rows >= row_warning:
+                risks.append(
+                    f"Estimated output is {root_rows:,} rows, above {row_warning:,}."
+                )
+            if total_cost >= cost_warning:
+                risks.append(
+                    f"Estimated total cost is {total_cost:,.2f}, above {cost_warning:,.2f}."
+                )
+
+            # The walker checks every node for a Seq Scan operation.
+            # Large scans receive a warning when their estimated rows reach the configured threshold.
+            # The warning names the affected relation when PostgreSQL includes it.
+            # A sequential-scan warning is a prompt for review. Statistics or query shape can make the scan reasonable.
+            for node in _walk_plan(root):
+                if node.get("Node Type") == "Seq Scan":
+                    estimated_rows = int(node.get("Plan Rows", 0))
+                    if estimated_rows >= row_warning:
+                        relation = node.get("Relation Name", "unknown relation")
+                        risks.append(
+                            f"Large sequential scan estimated on {relation}: "
+                            f"{estimated_rows:,} rows."
+                        )
+
+            result = QueryPlanReport(
+                root_node=str(root.get("Node Type", "Unknown")),
+                plan_rows=root_rows,
+                total_cost=total_cost,
+                risks=risks,
+                plan=plan,
+            ).model_dump_json()
+            logger.info(result)
+
+    except Exception as e:
+        result = {"error": f"{e.__class__.__name__}: {str(e)}"}
+        logger.error(result)
+
     return json_dumps(result)

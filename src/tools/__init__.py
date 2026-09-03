@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 from .db import (
     explain_analyze_query,
+    explain_query,
     get_table_schema,
     list_tables,
     run_query,
@@ -11,6 +12,7 @@ from .db import (
 )
 from .models import (
     ExplainAnalyzeQueryParams,
+    ExplainQueryParams,
     GetTableSchemaParams,
     RunQueryParams,
     ValidateQueryParams,
@@ -28,6 +30,10 @@ _AVAILABLE_TOOLS = {
     "explain_analyze_query": {
         "function": explain_analyze_query,
         "params_cls": ExplainAnalyzeQueryParams,
+    },
+    "explain_query": {
+        "function": explain_query,
+        "params_cls": ExplainQueryParams,
     },
 }
 

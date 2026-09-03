@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -29,3 +31,15 @@ class ValidateQueryResult(BaseModel):
 
 class ExplainAnalyzeQueryParams(BaseModel):
     sql: str = Field(description="Query to explain analyze")
+
+
+class ExplainQueryParams(BaseModel):
+    sql: str = Field(description="Query to explain without analyze")
+
+
+class QueryPlanReport(BaseModel):
+    root_node: str = Field(description="Top operation in the plan")
+    plan_rows: int = Field(description="Estimated output size")
+    total_cost: float = Field(description="Planner estimate")
+    risks: list[str] = Field(description="keeps the warnings")
+    plan: dict[str, Any] = Field(description="Query plan")
