@@ -190,11 +190,6 @@ Additionally, `run_query` wraps all user SQL inside a subquery with `LIMIT` enfo
 When a user submits a natural language question (e.g., *"What are the top 5 nations by revenue?"*):
 
 1. **Initialization:** The agent client spins up with the user question and the core System Instructions.
-2. **Metadata Discovery:** Sensing a complex query, the agent recognizes it does not know the database topology and initiates a `list_tables` call.
-3. **Relation Inspection:** After locating tables (such as `orders`, `lineitem`, and `customer`), the agent calls `get_table_schema` on the target tables to inspect their structures and identify foreign key constraints.
-4. **Execution Strategy:** Utilizing the discovered schema, the agent writes a precise multi-table JOIN query, submitting it via `run_query`.
-5. **Auto-Correction (Self-Healing):** If the initial query returns an engine error, the agent processes the error string, modifies the query syntax, and re-executes.
-6. **Formatting:** Once the query successfully returns sandboxed results, the agent synthesizes the raw tabular data into a polished, human-readable summary.
 2. **Metadata Discovery:** Sensing a complex query, the agent recognizes it does not know the database topology and initiates a `list_tables` call. Results are cached with TTL.
 3. **Relation Inspection:** After locating tables (such as `orders`, `lineitem`, and `customer`), the agent calls `get_table_schema` on the target tables to inspect their structures and identify foreign key constraints. Results are cached.
 4. **Glossary-Grounded SQL Generation:** The agent cross-references the Business Glossary for terms like "revenue" → `SUM(l_extendedprice * (1 - l_discount))`, ensuring correct formula usage.
@@ -208,9 +203,6 @@ When a user submits a natural language question (e.g., *"What are the top 5 nati
 
 ## 🔒 Safety and Design Guardrails
 
-* **SQL Injection Mitigation:** Parametric database calls are implemented across the metadata discovery tools to ensure safe query separation.
-* **Resource Optimization:** Iteration caps on the model loop protect API rate limits, while row limits inside SQL cursors prevent database resource exhaustion.
-* **Read-Only Enforcements:** The execution layer is designed to handle queries returning tabular descriptions, deterring hazardous table-altering SQL execution.
 * **SQL Injection Mitigation:** Parametric database calls are implemented across the metadata discovery tools (`$1` placeholders in `information_schema` queries) to ensure safe query separation.
 * **Multi-Layer Query Validation:** AST-based parsing rejects malformed SQL, multi-statement batches, non-SELECT operations, hallucinated tables, and invalid column references — all before hitting the database.
 * **Resource Optimization:** Iteration caps on the model loop protect API rate limits, while row limits inside SQL cursors prevent database resource exhaustion. TTL-based caching reduces redundant metadata fetches.
