@@ -46,9 +46,142 @@ This module acts as the orchestrator of the conversational state and tool-callin
 A suite of native Python database interfaces built using `asyncpg` to provide sandboxed database actions:
 * **Topology Discovery (`list_tables`):** Allows the agent to query database catalog tables (`information_schema.tables`) to inspect the active database state and list available relations.
 * **Schema Awareness & Join Resolution (`get_table_schema`):** Resolves columns, data types, and primary-foreign key relationships from `information_schema.columns` and key usage schemas. This informs the model of the exact joining relationships across tables, preventing "hallucinated" column joins.
+* **Local Query Validation (`validate_query`):** Parses and validates generated SQL using the `sqlglot` AST before it reaches the database. See [Local Syntax and Structural Shielding](#3-local-syntax-and-structural-shielding) for details.
+* **Cost-Aware Preflight (`explain_query`):** Runs `EXPLAIN (FORMAT JSON)` to analyze query plans and flags risky operations. See [Cost-Aware Preflight Guardrails](#4-cost-aware-preflight-guardrails) for details.
+* **Post-Execution Analysis (`explain_analyze_query`):** Runs `EXPLAIN ANALYZE` on executed queries to provide the agent with actual execution statistics for user-facing breakdowns.
 * **Sandboxed Query Executor (`run_query`):** Handles execution of generated read-only SQL queries with built-in safety boundaries:
   * **Memory Cap:** Enforces a rigid 50-row maximum result threshold using safe cursor fetches to avoid memory overflow during query execution on large datasets.
   * **Feedback Error Handling:** Catches execution syntax exceptions and forwards PostgreSQL engine errors back to the agent loop, prompting the model to automatically rewrite and heal its queries.
+
+---
+
+## ✨ Key Features
+
+### 1. Metadata-Driven Database Mapping
+
+**Concept:** Schema Caching, Content-Based Fingerprinting, and Time-To-Live (TTL) Cache Invalidation.
+
+The agent uses the `aiocache` library with a content-based key builder (`tools/cache.py`) to cache responses from metadata-discovery tools (`list_tables`, `get_table_schema`) and all query tools. Every cached entry is keyed by serializing tool parameters via `model_dump_json()`, which produces a deterministic SHA-256-equivalent content fingerprint — identical inputs always map to the same cache key, while any schema or parameter change naturally invalidates the entry.
+
+All cache entries are governed by a configurable TTL (`cache_ttl_seconds`, default: 3600s), set via `config.py`. When the TTL expires, the next invocation re-fetches live metadata from the database.
+
+**How it works in the codebase:**
+
+| Component | File | Mechanism |
+|---|---|---|
+| TTL-cached tool decorators | `tools/db.py` | `@cached(ttl=settings.cache_ttl_seconds, key_builder=tool_key_builder)` on `list_tables`, `get_table_schema`, `run_query`, `validate_query`, `explain_query`, `explain_analyze_query` |
+| Content-based key builder | `tools/cache.py` | `tool_key_builder()` serializes all Pydantic param models into a deterministic `func_name::args_json::kwargs_json` key |
+| Aggregated schema cache | `tools/db.py` | `_get_all_tables_schema()` builds a full `{table: {col: type}}` dictionary, itself TTL-cached, consumed by the validator |
+| TTL configuration | `config.py` | `cache_ttl_seconds: int = 3600` in the `Settings` model |
+
+**Impact:** Eliminates redundant database round-trips by storing the live database structure locally. The content-based fingerprint ensures schema consistency, while TTL limits database resource drain during high-frequency user interactions.
+
+---
+
+### 2. Semantic Prompt Engineering and Logic Grounding
+
+**Concept:** Business Glossary Integration and Prompt Grounding.
+
+The system prompt in `agent.py` embeds a **Business Glossary** that maps human business concepts to exact SQL formulas. This grounds the LLM's reasoning so that domain terms like "revenue" or "active customer" are never left to the model's imagination.
+
+**Glossary definitions in the system prompt:**
+
+| Term | Definition | Grounded SQL | Grain |
+|---|---|---|---|
+| **Revenue** | Discounted sales value before tax | `SUM(l_extendedprice * (1 - l_discount))` | One contribution per `lineitem` row |
+| **Active Customer** | Customer with at least one order in the requested date range | `COUNT(DISTINCT o_custkey)` | Distinct `orders.o_custkey` after applying `orders.o_orderdate` filter |
+
+The system prompt enforces a strict workflow: the agent must first discover actual schema via `list_tables` → `get_table_schema`, then **cross-reference glossary definitions** before writing SQL. The prompt rules also constrain the agent to SELECT-only queries, mandate LIMIT clauses, and require foreign-key-informed JOINs.
+
+**Impact:** Bridges the gap between everyday business terminology and raw database logic. It forces the text-to-SQL engine to translate human concepts into exact mathematical formulas, reducing ambiguity and preventing the generation of hallucinated columns.
+
+---
+
+### 3. Local Syntax and Structural Shielding
+
+**Concept:** AST Parsing and Schema-Aware Qualification via `sqlglot`.
+
+The `validate_query` tool (`tools/db.py`) performs a multi-layer local validation pipeline before any query reaches the database:
+
+```
+Generated SQL
+     │
+     ▼
+┌─────────────────────────────┐
+│  1. Parse (sqlglot AST)     │  → Reject syntax errors
+├─────────────────────────────┤
+│  2. Statement count check   │  → Reject multi-statement batches
+├─────────────────────────────┤
+│  3. Statement type check    │  → Reject non-SELECT (DML/DDL)
+├─────────────────────────────┤
+│  4. Table existence check   │  → Reject hallucinated tables
+├─────────────────────────────┤
+│  5. qualify() pass          │  → Resolve & validate all column
+│     (schema-aware)          │    references against live schema
+└─────────────────────────────┘
+     │
+     ▼
+  ValidateQueryResult
+  (is_valid, errors[], normalized_query)
+```
+
+**Validation stages:**
+
+1. **AST Parsing:** Uses `sqlglot.parse()` with the `postgres` dialect. Catches `ParseError` and `TokenError` for malformed SQL.
+2. **Single Statement Enforcement:** Rejects batches like `SELECT ...; DELETE ...` — only one statement is allowed per invocation.
+3. **SELECT-Only Gate:** Checks the parsed AST node type. Non-`Select` expressions (INSERT, UPDATE, DELETE, DROP) are rejected.
+4. **Table Reference Verification:** Extracts all `Table` nodes from the AST and cross-references them against the live schema dictionary from `_get_all_tables_schema()`. Unknown/hallucinated tables are caught here.
+5. **Schema-Aware Column Qualification:** Runs `sqlglot.optimizer.qualify()` with the full schema map (`{table: {column: type}}`). This resolves ambiguous column references, validates that every column exists in its referenced table, and produces a normalized query string.
+
+**Impact:** Fully validates query syntax and column maps locally using an abstract syntax tree. It rejects bad or unsafe commands before they can ever reach the database server, shielding database nodes from unnecessary execution overhead and database-level parse failures.
+
+---
+
+### 4. Cost-Aware Preflight Guardrails
+
+**Concept:** EXPLAIN Preflight Validation, Read-Only Transactions, and Interactive Approval Workflows.
+
+The `explain_query` tool (`tools/db.py`) runs `EXPLAIN (FORMAT JSON)` on the validated query **before execution**, parses the JSON plan tree, and generates a structured `QueryPlanReport` with risk assessments.
+
+**Preflight analysis pipeline:**
+
+```
+Validated SQL
+     │
+     ▼
+┌──────────────────────────────────┐
+│  EXPLAIN (FORMAT JSON)           │  → Get estimated plan
+├──────────────────────────────────┤
+│  Extract root Plan Rows & Cost   │  → Compare against thresholds
+├──────────────────────────────────┤
+│  _walk_plan() tree traversal     │  → Find all Seq Scan nodes
+│  Check estimated rows per scan   │  → Flag large sequential scans
+├──────────────────────────────────┤
+│  Build QueryPlanReport           │  → root_node, plan_rows,
+│                                  │    total_cost, risks[]
+└──────────────────────────────────┘
+     │
+     ▼
+  Agent decides: execute, rewrite, or abort
+```
+
+**Configurable thresholds (`config.py`):**
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `plan_rows_warning` | 100,000 | Flag queries estimating more output rows than this |
+| `plan_cost_warning` | 1,000,000 | Flag queries with planner cost above this |
+
+**Risk detection:**
+- **Row count warning:** Triggers when the root plan node estimates more rows than `plan_rows_warning`.
+- **Cost warning:** Triggers when `Total Cost` exceeds `plan_cost_warning`.
+- **Sequential scan detection:** The `_walk_plan()` recursive walker traverses every node in the plan tree. Any `Seq Scan` node estimating rows above the threshold is flagged with the affected relation name.
+
+The system prompt instructs the agent to run `explain_query` after validation passes and before `run_query`. If risks are detected, the agent is expected to rewrite the query (up to 3 attempts) before executing.
+
+Additionally, `run_query` wraps all user SQL inside a subquery with `LIMIT` enforcement (`SELECT * FROM (...) AS user_stmt LIMIT $1`), providing a hard ceiling on returned rows regardless of what the LLM generates.
+
+**Impact:** Analyzes the operational complexity and resource consumption of query plans before execution. It prevents heavy sequential scans and massive data reads on production servers, allowing developers to safely reject or optimize high-cost commands via a human-in-the-loop opt-in check.
 
 ---
 
@@ -62,6 +195,14 @@ When a user submits a natural language question (e.g., *"What are the top 5 nati
 4. **Execution Strategy:** Utilizing the discovered schema, the agent writes a precise multi-table JOIN query, submitting it via `run_query`.
 5. **Auto-Correction (Self-Healing):** If the initial query returns an engine error, the agent processes the error string, modifies the query syntax, and re-executes.
 6. **Formatting:** Once the query successfully returns sandboxed results, the agent synthesizes the raw tabular data into a polished, human-readable summary.
+2. **Metadata Discovery:** Sensing a complex query, the agent recognizes it does not know the database topology and initiates a `list_tables` call. Results are cached with TTL.
+3. **Relation Inspection:** After locating tables (such as `orders`, `lineitem`, and `customer`), the agent calls `get_table_schema` on the target tables to inspect their structures and identify foreign key constraints. Results are cached.
+4. **Glossary-Grounded SQL Generation:** The agent cross-references the Business Glossary for terms like "revenue" → `SUM(l_extendedprice * (1 - l_discount))`, ensuring correct formula usage.
+5. **Local Validation:** The agent calls `validate_query`, which parses the SQL into an AST, checks for forbidden statements, verifies table and column references against the live schema, and returns a normalized query.
+6. **Cost-Aware Preflight:** The agent runs `explain_query` on the normalized query. If the plan shows excessive cost, row count, or large sequential scans, the agent rewrites the query.
+7. **Execution:** Once the preflight passes, the agent calls `run_query` with the normalized query. Results are capped at 50 rows.
+8. **Auto-Correction (Self-Healing):** If the query returns a database error, the agent processes the error string, modifies the query syntax, and re-executes (up to 3 attempts).
+9. **Formatting:** Once the query successfully returns sandboxed results, the agent synthesizes the raw tabular data into a polished, human-readable summary.
 
 ---
 
@@ -70,7 +211,39 @@ When a user submits a natural language question (e.g., *"What are the top 5 nati
 * **SQL Injection Mitigation:** Parametric database calls are implemented across the metadata discovery tools to ensure safe query separation.
 * **Resource Optimization:** Iteration caps on the model loop protect API rate limits, while row limits inside SQL cursors prevent database resource exhaustion.
 * **Read-Only Enforcements:** The execution layer is designed to handle queries returning tabular descriptions, deterring hazardous table-altering SQL execution.
+* **SQL Injection Mitigation:** Parametric database calls are implemented across the metadata discovery tools (`$1` placeholders in `information_schema` queries) to ensure safe query separation.
+* **Multi-Layer Query Validation:** AST-based parsing rejects malformed SQL, multi-statement batches, non-SELECT operations, hallucinated tables, and invalid column references — all before hitting the database.
+* **Resource Optimization:** Iteration caps on the model loop protect API rate limits, while row limits inside SQL cursors prevent database resource exhaustion. TTL-based caching reduces redundant metadata fetches.
+* **Read-Only Enforcement:** The execution layer only processes SELECT statements (enforced both by the system prompt and the AST validator). The `run_query` wrapper applies a hard row LIMIT via parameterized subquery.
+* **Cost-Aware Execution:** `EXPLAIN`-based preflight analysis flags expensive query plans before execution, with configurable thresholds for row counts, total cost, and sequential scan detection.
 
+---
+
+## 📂 Project Structure
+
+```
+sql-agent/
+├── src/
+│   ├── main.py               # Entry point, database lifecycle
+│   ├── agent.py               # Agentic loop, system prompt, glossary
+│   ├── config.py              # Settings (TTL, thresholds, DB, LLM)
+│   ├── tools/
+│   │   ├── __init__.py        # Tool registry, schema/dispatch exports
+│   │   ├── db.py              # All database tools (list, schema, validate, explain, run)
+│   │   ├── cache.py           # Content-based cache key builder
+│   │   ├── models.py          # Pydantic models for tool params & results
+│   │   └── schema.py          # JSON schema generator for tool declarations
+│   └── utils/
+│       ├── db.py              # asyncpg connection pool manager
+│       ├── json.py            # Extended JSON serializer (Decimal, datetime, UUID)
+│       ├── llm.py             # Groq async client factory
+│       └── logging.py         # Loguru + Logfire integration
+├── docker-compose.yaml        # PostgreSQL 17 + DuckDB data loader
+├── pyproject.toml             # Dependencies (asyncpg, sqlglot, groq, aiocache, etc.)
+└── README.md
+```
+
+---
 
 ## Run Logs
 1. Features to notice: tool use, query validation, retry on failure
